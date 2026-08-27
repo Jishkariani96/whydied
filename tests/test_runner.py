@@ -58,3 +58,19 @@ def test_run_process_signal_termination() -> None:
 
     assert result.returncode == -15
     assert result.termination == SignalTermination(number=15, name="SIGTERM")
+
+
+def test_run_process_sigkill() -> None:
+    result = run_process(
+        [
+            sys.executable,
+            "-c",
+            "import os, signal; os.kill(os.getpid(), signal.SIGKILL)",
+        ]
+    )
+
+    assert result.returncode == -9
+    assert result.termination == SignalTermination(
+        number=9,
+        name="SIGKILL",
+    )
