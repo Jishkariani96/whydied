@@ -1,0 +1,20 @@
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ExitTermination:
+    code: int
+
+
+@dataclass(frozen=True)
+class SignalTermination:
+    number: int
+    name: str
+
+
+@dataclass(frozen=True)
+class ProcessResult:
+    pid: int
+    runtime_seconds: float
+    returncode: int
+    termination: ExitTermination | SignalTermination
