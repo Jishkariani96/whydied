@@ -1,5 +1,7 @@
+import sys
+
 from whydied.models import ExitTermination, SignalTermination
-from whydied.runner import decode_termination
+from whydied.runner import decode_termination, run_process
 
 
 def test_decode_zero_exit_code() -> None:
@@ -27,3 +29,32 @@ def test_decode_unknown_signal() -> None:
         number=999,
         name="UNKNOWN_SIGNAL",
     )
+
+
+def test_run_process_clean_exit() -> None:
+    result = run_process([sys.executable, "-c", "raise SystemExit(0)"])
+
+    assert result.pid > 0
+    assert result.runtime_seconds >= 0
+    assert result.returncode == 0
+    assert result.termination == ExitTermination(code=0)
+
+
+def test_run_process_non_zero_exit() -> None:
+    result = run_process([sys.executable, "-c", "raise SystemExit(3)"])
+
+    assert result.returncode == 3
+    assert result.termination == ExitTermination(code=3)
+
+
+def test_run_process_signal_termination() -> None:
+    result = run_process(
+        [
+            sys.executable,
+            "-c",
+            "import os, signal; os.kill(os.getpid(), signal.SIGTERM)",
+        ]
+    )
+
+    assert result.returncode == -15
+    assert result.termination == SignalTermination(number=15, name="SIGTERM")
