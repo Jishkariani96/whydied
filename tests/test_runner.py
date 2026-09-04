@@ -1,6 +1,8 @@
 import sys
 
-from whydied.models import ExitTermination, SignalTermination
+import pytest
+
+from whydied.models import ExitTermination, ProcStatus, SignalTermination
 from whydied.runner import decode_termination, run_process
 
 
@@ -73,4 +75,60 @@ def test_run_process_sigkill() -> None:
     assert result.termination == SignalTermination(
         number=9,
         name="SIGKILL",
+    )
+
+
+def test_long_enough_child_produces_proc_status() -> None:
+    result = run_process([sys.executable, "-c", "import time; time.sleep(0.2)"])
+
+    assert result.proc_status is not None
+
+
+def test_observed_rss_values_are_integer_or_none() -> None:
+    result = run_process([sys.executable, "-c", "import time; time.sleep(0.2)"])
+
+    assert result.proc_status is not None
+    assert result.proc_status.rss_bytes is None or isinstance(
+        result.proc_status.rss_bytes,
+        int,
+    )
+    assert result.proc_status.peak_rss_bytes is None or isinstance(
+        result.proc_status.peak_rss_bytes,
+        int,
+    )
+
+
+def test_very_short_lived_child_may_have_no_proc_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("whydied.runner.read_proc_status", lambda _pid: None)
+
+    result = run_process([sys.executable, "-c", "raise SystemExit(0)"])
+
+    assert result.returncode == 0
+    assert result.proc_status is None
+
+
+def test_runner_handles_proc_status_becoming_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observations = [
+        ProcStatus(state="S (sleeping)", rss_bytes=10, peak_rss_bytes=30),
+        ProcStatus(state="R (running)", rss_bytes=20, peak_rss_bytes=25),
+    ]
+
+    def read_status(_pid: int) -> ProcStatus | None:
+        if observations:
+            return observations.pop(0)
+        return None
+
+    monkeypatch.setattr("whydied.runner.read_proc_status", read_status)
+
+    result = run_process([sys.executable, "-c", "import time; time.sleep(0.12)"])
+
+    assert result.returncode == 0
+    assert result.proc_status == ProcStatus(
+        state="R (running)",
+        rss_bytes=20,
+        peak_rss_bytes=30,
     )

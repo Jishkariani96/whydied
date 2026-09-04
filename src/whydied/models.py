@@ -25,3 +25,4 @@ class ProcessResult:
     runtime_seconds: float
     returncode: int
     termination: ExitTermination | SignalTermination
+    proc_status: ProcStatus | None
