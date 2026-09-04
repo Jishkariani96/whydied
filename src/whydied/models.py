@@ -2,6 +2,13 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class ProcStatus:
+    state: str | None
+    rss_bytes: int | None
+    peak_rss_bytes: int | None
+
+
+@dataclass(frozen=True)
 class ExitTermination:
     code: int
 
