@@ -15,6 +15,12 @@ KernelLog = KernelLogAvailable | KernelLogUnavailable
 
 
 @dataclass(frozen=True)
+class OOMKillEvent:
+    victim_pid: int
+    victim_name: str
+
+
+@dataclass(frozen=True)
 class ProcStatus:
     state: str | None
     rss_bytes: int | None

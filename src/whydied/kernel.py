@@ -1,7 +1,10 @@
+import re
 import subprocess
 from datetime import datetime
 
-from whydied.models import KernelLogAvailable, KernelLogUnavailable
+from whydied.models import KernelLogAvailable, KernelLogUnavailable, OOMKillEvent
+
+_OOM_KILL_EVENT_PATTERN = re.compile(r"\bKilled process ([1-9][0-9]*) \(([^)]+)\)")
 
 
 def read_kernel_log(
@@ -34,3 +37,20 @@ def read_kernel_log(
     return KernelLogAvailable(
         messages=tuple(line for line in result.stdout.splitlines() if line != "")
     )
+
+
+def parse_oom_kill_events(
+    messages: tuple[str, ...],
+) -> tuple[OOMKillEvent, ...]:
+    events: list[OOMKillEvent] = []
+    for message in messages:
+        match = _OOM_KILL_EVENT_PATTERN.search(message)
+        if match is None:
+            continue
+        events.append(
+            OOMKillEvent(
+                victim_pid=int(match.group(1)),
+                victim_name=match.group(2),
+            )
+        )
+    return tuple(events)

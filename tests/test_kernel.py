@@ -3,8 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from whydied.kernel import read_kernel_log
-from whydied.models import KernelLogAvailable, KernelLogUnavailable
+from whydied.kernel import parse_oom_kill_events, read_kernel_log
+from whydied.models import KernelLogAvailable, KernelLogUnavailable, OOMKillEvent
 
 
 def test_read_kernel_log_successful_messages(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -220,3 +220,106 @@ def test_read_kernel_log_command_construction(monkeypatch: pytest.MonkeyPatch) -
     assert kwargs["text"] is True
     assert kwargs["check"] is False
     assert kwargs.get("shell") is not True
+
+
+def test_parse_oom_kill_events_modern_victim_line() -> None:
+    events = parse_oom_kill_events(
+        (
+            (
+                "kernel: Out of memory: Killed process 1234 (python) "
+                "total-vm:1000kB, anon-rss:200kB, file-rss:0kB, "
+                "shmem-rss:0kB, UID:1000 pgtables:64kB oom_score_adj:0"
+            ),
+        )
+    )
+
+    assert events == (OOMKillEvent(victim_pid=1234, victim_name="python"),)
+
+
+def test_parse_oom_kill_events_short_victim_line() -> None:
+    events = parse_oom_kill_events(("Killed process 42 (worker)",))
+
+    assert events == (OOMKillEvent(victim_pid=42, victim_name="worker"),)
+
+
+def test_parse_oom_kill_events_allows_text_before_victim_structure() -> None:
+    events = parse_oom_kill_events(
+        ("localhost kernel: memory: Killed process 99 (service) now",)
+    )
+
+    assert events == (OOMKillEvent(victim_pid=99, victim_name="service"),)
+
+
+def test_parse_oom_kill_events_extracts_pid_as_integer() -> None:
+    event = parse_oom_kill_events(("Killed process 5678 (batch)",))[0]
+
+    assert event.victim_pid == 5678
+    assert isinstance(event.victim_pid, int)
+
+
+def test_parse_oom_kill_events_preserves_process_name() -> None:
+    event = parse_oom_kill_events(("Killed process 123 (PyThOn-worker.1)",))[0]
+
+    assert event.victim_name == "PyThOn-worker.1"
+
+
+def test_parse_oom_kill_events_multiple_events_preserve_order() -> None:
+    events = parse_oom_kill_events(
+        (
+            "Killed process 10 (first)",
+            "unrelated kernel message",
+            "Killed process 20 (second)",
+        )
+    )
+
+    assert events == (
+        OOMKillEvent(victim_pid=10, victim_name="first"),
+        OOMKillEvent(victim_pid=20, victim_name="second"),
+    )
+
+
+def test_parse_oom_kill_events_unrelated_messages_produce_no_events() -> None:
+    events = parse_oom_kill_events(
+        (
+            "usb 1-1: new high-speed USB device number 2",
+            "eth0: link becomes ready",
+            "process exited after SIGKILL",
+        )
+    )
+
+    assert events == ()
+
+
+def test_parse_oom_kill_events_oom_kill_context_without_victim_produces_no_event() -> (
+    None
+):
+    events = parse_oom_kill_events(
+        ("oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=/",)
+    )
+
+    assert events == ()
+
+
+def test_parse_oom_kill_events_out_of_memory_without_victim_produces_no_event() -> None:
+    events = parse_oom_kill_events(("Out of memory: Kill process 123 (python)",))
+
+    assert events == ()
+
+
+def test_parse_oom_kill_events_malformed_victim_lines_produce_no_events() -> None:
+    events = parse_oom_kill_events(
+        (
+            "Killed process (python)",
+            "Killed process abc (python)",
+            "Killed process 0 (python)",
+            "Killed process 123 ()",
+            "Killed process 123 python",
+            "Killed process 123 (python",
+        )
+    )
+
+    assert events == ()
+
+
+def test_parse_oom_kill_events_empty_input_produces_empty_tuple() -> None:
+    assert parse_oom_kill_events(()) == ()
