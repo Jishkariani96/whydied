@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import StrEnum
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,23 @@ KernelLog = KernelLogAvailable | KernelLogUnavailable
 class OOMKillEvent:
     victim_pid: int
     victim_name: str
+
+
+class DiagnosisCause(StrEnum):
+    OOM_KILL = "oom_kill"
+    UNKNOWN = "unknown"
+
+
+class KernelEvidenceStatus(StrEnum):
+    OOM_VICTIM_MATCH = "oom_victim_match"
+    NO_OOM_VICTIM_MATCH = "no_oom_victim_match"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True)
+class Diagnosis:
+    cause: DiagnosisCause
+    kernel_evidence: KernelEvidenceStatus
 
 
 @dataclass(frozen=True)
