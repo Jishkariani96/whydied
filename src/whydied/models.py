@@ -63,3 +63,10 @@ class ProcessResult:
     returncode: int
     termination: ExitTermination | SignalTermination
     proc_status: ProcStatus | None
+
+
+@dataclass(frozen=True)
+class InspectionResult:
+    process: ProcessResult
+    kernel_log: KernelLog
+    diagnosis: Diagnosis
