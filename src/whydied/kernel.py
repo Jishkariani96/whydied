@@ -9,12 +9,17 @@ _OOM_KILL_EVENT_PATTERN = re.compile(r"\bKilled process ([1-9][0-9]*) \(([^)]+)\
 
 def read_kernel_log(
     since: datetime | None = None,
+    until: datetime | None = None,
 ) -> KernelLogAvailable | KernelLogUnavailable:
     command = ["journalctl", "-k", "-o", "cat", "--no-pager"]
     if since is not None:
-        if since.tzinfo is None or since.utcoffset() is None:
-            raise ValueError("since must be a timezone-aware datetime")
+        _validate_aware_datetime(since, "since")
         command.extend(["--since", since.isoformat()])
+    if until is not None:
+        _validate_aware_datetime(until, "until")
+        command.extend(["--until", until.isoformat()])
+    if since is not None and until is not None and since > until:
+        raise ValueError("since must be less than or equal to until")
 
     try:
         result = subprocess.run(
@@ -37,6 +42,11 @@ def read_kernel_log(
     return KernelLogAvailable(
         messages=tuple(line for line in result.stdout.splitlines() if line != "")
     )
+
+
+def _validate_aware_datetime(value: datetime, parameter_name: str) -> None:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{parameter_name} must be a timezone-aware datetime")
 
 
 def parse_oom_kill_events(

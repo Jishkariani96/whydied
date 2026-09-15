@@ -1,5 +1,5 @@
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -170,6 +170,95 @@ def test_read_kernel_log_with_since_includes_timestamp_and_offset(
     assert kwargs.get("shell") is not True
 
 
+def test_read_kernel_log_until_only_includes_timestamp_and_offset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def run_journalctl(
+        *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    read_kernel_log(
+        until=datetime(
+            2025,
+            1,
+            2,
+            6,
+            7,
+            8,
+            tzinfo=timezone(timedelta(hours=-3)),
+        )
+    )
+
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == (
+        [
+            "journalctl",
+            "-k",
+            "-o",
+            "cat",
+            "--no-pager",
+            "--until",
+            "2025-01-02T06:07:08-03:00",
+        ],
+    )
+    assert kwargs["capture_output"] is True
+    assert kwargs["text"] is True
+    assert kwargs["check"] is False
+    assert kwargs.get("shell") is not True
+
+
+def test_read_kernel_log_since_and_until_are_in_deterministic_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def run_journalctl(
+        *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    read_kernel_log(
+        since=datetime(2025, 1, 2, 3, 4, 5, tzinfo=UTC),
+        until=datetime(2025, 1, 2, 3, 5, 5, tzinfo=UTC),
+    )
+
+    assert len(calls) == 1
+    args, _kwargs = calls[0]
+    assert args == (
+        [
+            "journalctl",
+            "-k",
+            "-o",
+            "cat",
+            "--no-pager",
+            "--since",
+            "2025-01-02T03:04:05+00:00",
+            "--until",
+            "2025-01-02T03:05:05+00:00",
+        ],
+    )
+
+
 def test_read_kernel_log_naive_since_raises_value_error_without_subprocess(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -191,6 +280,181 @@ def test_read_kernel_log_naive_since_raises_value_error_without_subprocess(
 
     with pytest.raises(ValueError, match="timezone-aware"):
         read_kernel_log(since=datetime(2025, 1, 2, 3, 4, 5))  # noqa: DTZ001
+
+    assert subprocess_called is False
+
+
+def test_read_kernel_log_naive_until_raises_value_error_without_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subprocess_called = False
+
+    def run_journalctl(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal subprocess_called
+        subprocess_called = True
+        return subprocess.CompletedProcess(
+            args=["journalctl"],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    with pytest.raises(ValueError, match="until must be a timezone-aware datetime"):
+        read_kernel_log(until=datetime(2025, 1, 2, 3, 4, 5))  # noqa: DTZ001
+
+    assert subprocess_called is False
+
+
+def test_read_kernel_log_invalid_interval_raises_value_error_without_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subprocess_called = False
+
+    def run_journalctl(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal subprocess_called
+        subprocess_called = True
+        return subprocess.CompletedProcess(
+            args=["journalctl"],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    with pytest.raises(ValueError, match="since must be less than or equal to until"):
+        read_kernel_log(
+            since=datetime(2025, 1, 2, 3, 5, 5, tzinfo=UTC),
+            until=datetime(2025, 1, 2, 3, 4, 5, tzinfo=UTC),
+        )
+
+    assert subprocess_called is False
+
+
+def test_read_kernel_log_equal_boundaries_are_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def run_journalctl(
+        *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    boundary = datetime(2025, 1, 2, 3, 4, 5, tzinfo=UTC)
+    read_kernel_log(since=boundary, until=boundary)
+
+    assert len(calls) == 1
+    args, _kwargs = calls[0]
+    assert args == (
+        [
+            "journalctl",
+            "-k",
+            "-o",
+            "cat",
+            "--no-pager",
+            "--since",
+            "2025-01-02T03:04:05+00:00",
+            "--until",
+            "2025-01-02T03:04:05+00:00",
+        ],
+    )
+
+
+def test_read_kernel_log_compares_chronology_across_offsets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def run_journalctl(
+        *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    read_kernel_log(
+        since=datetime(
+            2025,
+            1,
+            2,
+            12,
+            0,
+            0,
+            tzinfo=timezone(timedelta(hours=4)),
+        ),
+        until=datetime(2025, 1, 2, 9, 0, 0, tzinfo=UTC),
+    )
+
+    assert len(calls) == 1
+    args, _kwargs = calls[0]
+    assert args == (
+        [
+            "journalctl",
+            "-k",
+            "-o",
+            "cat",
+            "--no-pager",
+            "--since",
+            "2025-01-02T12:00:00+04:00",
+            "--until",
+            "2025-01-02T09:00:00+00:00",
+        ],
+    )
+
+
+def test_read_kernel_log_rejects_cross_offset_interval_by_actual_chronology(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subprocess_called = False
+
+    def run_journalctl(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal subprocess_called
+        subprocess_called = True
+        return subprocess.CompletedProcess(
+            args=["journalctl"],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    with pytest.raises(ValueError, match="since must be less than or equal to until"):
+        read_kernel_log(
+            since=datetime(2025, 1, 2, 8, 0, 0, tzinfo=UTC),
+            until=datetime(
+                2025,
+                1,
+                2,
+                12,
+                30,
+                0,
+                tzinfo=timezone(timedelta(hours=5)),
+            ),
+        )
 
     assert subprocess_called is False
 
