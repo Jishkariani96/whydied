@@ -2,6 +2,19 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class KernelLogAvailable:
+    messages: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class KernelLogUnavailable:
+    reason: str
+
+
+KernelLog = KernelLogAvailable | KernelLogUnavailable
+
+
+@dataclass(frozen=True)
 class ProcStatus:
     state: str | None
     rss_bytes: int | None
