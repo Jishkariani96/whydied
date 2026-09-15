@@ -1,8 +1,8 @@
 import argparse
 
 from whydied import __version__
+from whydied.inspect import inspect_process
 from whydied.models import ExitTermination, SignalTermination
-from whydied.runner import run_process
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,13 +34,14 @@ def main(argv: list[str] | None = None) -> None:
     if not command:
         parser.error("child command is required; use: whydied -- <command> [args...]")
 
-    result = run_process(command)
+    inspection = inspect_process(command)
+    process = inspection.process
 
-    print(f"PID: {result.pid}")
-    print(f"Runtime: {result.runtime_seconds:.2f}s")
-    print(f"Return code: {result.returncode}")
+    print(f"PID: {process.pid}")
+    print(f"Runtime: {process.runtime_seconds:.2f}s")
+    print(f"Return code: {process.returncode}")
 
-    if isinstance(result.termination, ExitTermination):
-        print(f"Termination: exit {result.termination.code}")
-    elif isinstance(result.termination, SignalTermination):
-        print(f"Termination: {result.termination.name} ({result.termination.number})")
+    if isinstance(process.termination, ExitTermination):
+        print(f"Termination: exit {process.termination.code}")
+    elif isinstance(process.termination, SignalTermination):
+        print(f"Termination: {process.termination.name} ({process.termination.number})")
