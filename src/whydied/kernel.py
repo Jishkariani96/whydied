@@ -1,12 +1,21 @@
 import subprocess
+from datetime import datetime
 
 from whydied.models import KernelLogAvailable, KernelLogUnavailable
 
 
-def read_kernel_log() -> KernelLogAvailable | KernelLogUnavailable:
+def read_kernel_log(
+    since: datetime | None = None,
+) -> KernelLogAvailable | KernelLogUnavailable:
+    command = ["journalctl", "-k", "-o", "cat", "--no-pager"]
+    if since is not None:
+        if since.tzinfo is None or since.utcoffset() is None:
+            raise ValueError("since must be a timezone-aware datetime")
+        command.extend(["--since", since.isoformat()])
+
     try:
         result = subprocess.run(
-            ["journalctl", "-k", "-o", "cat", "--no-pager"],
+            command,
             capture_output=True,
             text=True,
             check=False,

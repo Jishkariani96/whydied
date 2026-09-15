@@ -1,4 +1,5 @@
 import subprocess
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -118,6 +119,80 @@ def test_read_kernel_log_os_error(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (
         result.reason == "failed to run journalctl: execution failed deterministically"
     )
+
+
+def test_read_kernel_log_with_since_includes_timestamp_and_offset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def run_journalctl(
+        *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    read_kernel_log(
+        since=datetime(
+            2025,
+            1,
+            2,
+            3,
+            4,
+            5,
+            tzinfo=timezone(timedelta(hours=4)),
+        )
+    )
+
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == (
+        [
+            "journalctl",
+            "-k",
+            "-o",
+            "cat",
+            "--no-pager",
+            "--since",
+            "2025-01-02T03:04:05+04:00",
+        ],
+    )
+    assert kwargs["capture_output"] is True
+    assert kwargs["text"] is True
+    assert kwargs["check"] is False
+    assert kwargs.get("shell") is not True
+
+
+def test_read_kernel_log_naive_since_raises_value_error_without_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subprocess_called = False
+
+    def run_journalctl(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal subprocess_called
+        subprocess_called = True
+        return subprocess.CompletedProcess(
+            args=["journalctl"],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        read_kernel_log(since=datetime(2025, 1, 2, 3, 4, 5))  # noqa: DTZ001
+
+    assert subprocess_called is False
 
 
 def test_read_kernel_log_command_construction(monkeypatch: pytest.MonkeyPatch) -> None:
