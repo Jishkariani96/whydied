@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+import signal
 
 import pytest
 
@@ -8,78 +8,81 @@ from whydied.models import (
     DiagnosisCause,
     ExitTermination,
     InspectionResult,
+    KernelCursorAvailable,
+    KernelCursorUnavailable,
     KernelEvidenceStatus,
     KernelLogAvailable,
     KernelLogUnavailable,
     ProcessResult,
+    SignalTermination,
 )
 
 
-def _process_result() -> ProcessResult:
+def _process_result(
+    termination: ExitTermination | SignalTermination,
+    *,
+    pid: int = 1234,
+) -> ProcessResult:
     return ProcessResult(
-        pid=1234,
+        pid=pid,
         runtime_seconds=0.1,
-        returncode=0,
-        termination=ExitTermination(code=0),
+        returncode=(
+            termination.code
+            if isinstance(termination, ExitTermination)
+            else -termination.number
+        ),
+        termination=termination,
         proc_status=None,
     )
 
 
-def _diagnosis(kernel_evidence: KernelEvidenceStatus) -> Diagnosis:
-    return Diagnosis(
-        cause=DiagnosisCause.UNKNOWN,
-        kernel_evidence=kernel_evidence,
-    )
-
-
-def test_inspect_process_coordinates_process_kernel_and_diagnosis(
+def test_inspect_process_coordinates_cursor_process_log_and_diagnosis(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     command = ["python", "child.py"]
-    process_result = _process_result()
+    cursor_result = KernelCursorAvailable(cursor="cursor-value")
+    process_result = _process_result(ExitTermination(code=0))
     kernel_log = KernelLogAvailable(messages=("kernel message",))
-    diagnosis = _diagnosis(KernelEvidenceStatus.NO_OOM_VICTIM_MATCH)
-    started_at = datetime(2025, 1, 2, 3, 4, 5, tzinfo=UTC)
-    ended_at = datetime(2025, 1, 2, 3, 4, 6, tzinfo=UTC)
-    clock_values = [started_at, ended_at]
+    diagnosis = Diagnosis(
+        cause=DiagnosisCause.CLEAN_EXIT,
+        kernel_evidence=KernelEvidenceStatus.NO_OOM_VICTIM_MATCH,
+    )
     events: list[str] = []
 
-    def utc_now() -> datetime:
-        events.append("clock")
-        return clock_values.pop(0)
+    def read_kernel_cursor() -> KernelCursorAvailable:
+        assert events == []
+        events.append("read_kernel_cursor")
+        return cursor_result
 
     def run_process(command_arg: list[str]) -> ProcessResult:
-        assert events == ["clock"]
+        assert events == ["read_kernel_cursor"]
         assert command_arg is command
         events.append("run_process")
         return process_result
 
-    def read_kernel_log(
-        *, since: datetime | None, until: datetime | None
-    ) -> KernelLogAvailable:
-        assert events == ["clock", "run_process", "clock"]
-        assert since is started_at
-        assert until is ended_at
-        assert since.tzinfo is UTC
-        assert until.tzinfo is UTC
-        assert since.utcoffset() is not None
-        assert until.utcoffset() is not None
-        events.append("read_kernel_log")
+    def read_kernel_log_after(cursor: str) -> KernelLogAvailable:
+        assert events == ["read_kernel_cursor", "run_process"]
+        assert cursor == cursor_result.cursor
+        events.append("read_kernel_log_after")
         return kernel_log
 
     def diagnose_process(
         process_arg: ProcessResult,
         kernel_log_arg: KernelLogAvailable,
     ) -> Diagnosis:
-        assert events == ["clock", "run_process", "clock", "read_kernel_log"]
+        assert events == [
+            "read_kernel_cursor",
+            "run_process",
+            "read_kernel_log_after",
+        ]
         assert process_arg is process_result
         assert kernel_log_arg is kernel_log
         events.append("diagnose_process")
         return diagnosis
 
-    monkeypatch.setattr("whydied.inspect._utc_now", utc_now)
+    monkeypatch.setattr("whydied.inspect.read_kernel_cursor", read_kernel_cursor)
     monkeypatch.setattr("whydied.inspect.run_process", run_process)
-    monkeypatch.setattr("whydied.inspect.read_kernel_log", read_kernel_log)
+    monkeypatch.setattr("whydied.inspect.read_kernel_log_after", read_kernel_log_after)
     monkeypatch.setattr("whydied.inspect.diagnose_process", diagnose_process)
 
     result = inspect_process(command)
@@ -89,99 +92,283 @@ def test_inspect_process_coordinates_process_kernel_and_diagnosis(
         kernel_log=kernel_log,
         diagnosis=diagnosis,
     )
-    assert result.process is process_result
-    assert result.kernel_log is kernel_log
-    assert result.diagnosis is diagnosis
     assert events == [
-        "clock",
+        "read_kernel_cursor",
         "run_process",
-        "clock",
-        "read_kernel_log",
+        "read_kernel_log_after",
         "diagnose_process",
     ]
 
 
-def test_inspect_process_passes_unavailable_kernel_log_to_diagnosis(
+def test_inspect_process_cursor_unavailable_does_not_query_unbounded_log(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    process_result = _process_result()
-    kernel_log = KernelLogUnavailable(reason="journalctl unavailable")
-    diagnosis = _diagnosis(KernelEvidenceStatus.UNAVAILABLE)
-    clock_values = [
-        datetime(2025, 1, 2, 3, 4, 5, tzinfo=UTC),
-        datetime(2025, 1, 2, 3, 4, 6, tzinfo=UTC),
-    ]
+    cursor_result = KernelCursorUnavailable(reason="cursor unavailable")
+    process_result = _process_result(
+        SignalTermination(number=signal.SIGKILL, name="SIGKILL")
+    )
+    kernel_read_called = False
 
-    def utc_now() -> datetime:
-        return clock_values.pop(0)
+    def read_kernel_log_after(_cursor: str) -> KernelLogAvailable:
+        nonlocal kernel_read_called
+        kernel_read_called = True
+        return KernelLogAvailable(messages=())
 
-    def run_process(_command: list[str]) -> ProcessResult:
-        return process_result
-
-    def read_kernel_log(
-        *, since: datetime | None, until: datetime | None
-    ) -> KernelLogUnavailable:
-        assert since is not None
-        assert until is not None
-        return kernel_log
-
-    def diagnose_process(
-        process_arg: ProcessResult,
-        kernel_log_arg: KernelLogUnavailable,
-    ) -> Diagnosis:
-        assert process_arg is process_result
-        assert kernel_log_arg is kernel_log
-        return diagnosis
-
-    monkeypatch.setattr("whydied.inspect._utc_now", utc_now)
-    monkeypatch.setattr("whydied.inspect.run_process", run_process)
-    monkeypatch.setattr("whydied.inspect.read_kernel_log", read_kernel_log)
-    monkeypatch.setattr("whydied.inspect.diagnose_process", diagnose_process)
+    monkeypatch.setattr(
+        "whydied.inspect.read_kernel_cursor",
+        lambda: cursor_result,
+    )
+    monkeypatch.setattr(
+        "whydied.inspect.run_process",
+        lambda _command: process_result,
+    )
+    monkeypatch.setattr("whydied.inspect.read_kernel_log_after", read_kernel_log_after)
+    monkeypatch.setattr(
+        "whydied.inspect._sleep",
+        lambda _seconds: pytest.fail("kernel log retry was not expected"),
+    )
 
     result = inspect_process(["python"])
 
-    assert result == InspectionResult(
-        process=process_result,
-        kernel_log=kernel_log,
-        diagnosis=diagnosis,
+    assert result.kernel_log == KernelLogUnavailable(reason="cursor unavailable")
+    assert result.diagnosis == Diagnosis(
+        cause=DiagnosisCause.UNKNOWN,
+        kernel_evidence=KernelEvidenceStatus.UNAVAILABLE,
     )
-    assert result.kernel_log is kernel_log
+    assert kernel_read_called is False
+
+
+def test_inspect_process_unavailable_post_cursor_log_does_not_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process_result = _process_result(
+        SignalTermination(number=signal.SIGKILL, name="SIGKILL")
+    )
+    cursors: list[str] = []
+
+    def read_kernel_log_after(cursor: str) -> KernelLogUnavailable:
+        cursors.append(cursor)
+        return KernelLogUnavailable(reason="journalctl unavailable")
+
+    monkeypatch.setattr(
+        "whydied.inspect.read_kernel_cursor",
+        lambda: KernelCursorAvailable(cursor="cursor-value"),
+    )
+    monkeypatch.setattr(
+        "whydied.inspect.run_process",
+        lambda _command: process_result,
+    )
+    monkeypatch.setattr("whydied.inspect.read_kernel_log_after", read_kernel_log_after)
+    monkeypatch.setattr(
+        "whydied.inspect._sleep",
+        lambda _seconds: pytest.fail("kernel log retry was not expected"),
+    )
+
+    result = inspect_process(["python"])
+
+    assert result.diagnosis == Diagnosis(
+        cause=DiagnosisCause.UNKNOWN,
+        kernel_evidence=KernelEvidenceStatus.UNAVAILABLE,
+    )
+    assert cursors == ["cursor-value"]
+
+
+@pytest.mark.parametrize(
+    ("termination", "expected_cause"),
+    (
+        (ExitTermination(code=0), DiagnosisCause.CLEAN_EXIT),
+        (ExitTermination(code=3), DiagnosisCause.NON_ZERO_EXIT),
+        (
+            SignalTermination(number=signal.SIGTERM, name="SIGTERM"),
+            DiagnosisCause.SIGNAL,
+        ),
+        (
+            SignalTermination(number=signal.SIGSEGV, name="SIGSEGV"),
+            DiagnosisCause.SIGNAL,
+        ),
+    ),
+)
+def test_inspect_process_non_sigkill_does_not_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    termination: ExitTermination | SignalTermination,
+    expected_cause: DiagnosisCause,
+) -> None:
+    process_result = _process_result(termination)
+    cursors: list[str] = []
+
+    def read_kernel_log_after(cursor: str) -> KernelLogAvailable:
+        cursors.append(cursor)
+        return KernelLogAvailable(messages=())
+
+    monkeypatch.setattr(
+        "whydied.inspect.read_kernel_cursor",
+        lambda: KernelCursorAvailable(cursor="cursor-value"),
+    )
+    monkeypatch.setattr(
+        "whydied.inspect.run_process",
+        lambda _command: process_result,
+    )
+    monkeypatch.setattr("whydied.inspect.read_kernel_log_after", read_kernel_log_after)
+    monkeypatch.setattr(
+        "whydied.inspect._sleep",
+        lambda _seconds: pytest.fail("kernel log retry was not expected"),
+    )
+
+    result = inspect_process(["python"])
+
+    assert result.diagnosis == Diagnosis(
+        cause=expected_cause,
+        kernel_evidence=KernelEvidenceStatus.NO_OOM_VICTIM_MATCH,
+    )
+    assert cursors == ["cursor-value"]
+
+
+def test_inspect_process_immediate_oom_match_does_not_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process_result = _process_result(
+        SignalTermination(number=signal.SIGKILL, name="SIGKILL"),
+        pid=4321,
+    )
+    cursors: list[str] = []
+
+    def read_kernel_log_after(cursor: str) -> KernelLogAvailable:
+        cursors.append(cursor)
+        return KernelLogAvailable(
+            messages=("Memory cgroup out of memory: Killed process 4321 (python)",)
+        )
+
+    monkeypatch.setattr(
+        "whydied.inspect.read_kernel_cursor",
+        lambda: KernelCursorAvailable(cursor="cursor-value"),
+    )
+    monkeypatch.setattr(
+        "whydied.inspect.run_process",
+        lambda _command: process_result,
+    )
+    monkeypatch.setattr("whydied.inspect.read_kernel_log_after", read_kernel_log_after)
+    monkeypatch.setattr(
+        "whydied.inspect._sleep",
+        lambda _seconds: pytest.fail("kernel log retry was not expected"),
+    )
+
+    result = inspect_process(["python"])
+
+    assert result.diagnosis == Diagnosis(
+        cause=DiagnosisCause.OOM_KILL,
+        kernel_evidence=KernelEvidenceStatus.OOM_VICTIM_MATCH,
+    )
+    assert cursors == ["cursor-value"]
+
+
+def test_inspect_process_sigkill_no_match_retries_and_finds_oom(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process_result = _process_result(
+        SignalTermination(number=signal.SIGKILL, name="SIGKILL"),
+        pid=4321,
+    )
+    kernel_logs = [
+        KernelLogAvailable(messages=()),
+        KernelLogAvailable(
+            messages=("Memory cgroup out of memory: Killed process 4321 (python)",)
+        ),
+    ]
+    cursors: list[str] = []
+    sleeps: list[float] = []
+
+    def read_kernel_log_after(cursor: str) -> KernelLogAvailable:
+        cursors.append(cursor)
+        return kernel_logs.pop(0)
+
+    monkeypatch.setattr(
+        "whydied.inspect.read_kernel_cursor",
+        lambda: KernelCursorAvailable(cursor="original-cursor"),
+    )
+    monkeypatch.setattr(
+        "whydied.inspect.run_process",
+        lambda _command: process_result,
+    )
+    monkeypatch.setattr("whydied.inspect.read_kernel_log_after", read_kernel_log_after)
+    monkeypatch.setattr("whydied.inspect._sleep", sleeps.append)
+
+    result = inspect_process(["python"])
+
+    assert result.diagnosis == Diagnosis(
+        cause=DiagnosisCause.OOM_KILL,
+        kernel_evidence=KernelEvidenceStatus.OOM_VICTIM_MATCH,
+    )
+    assert sleeps == [0.1]
+    assert cursors == ["original-cursor", "original-cursor"]
+
+
+def test_inspect_process_sigkill_retries_stop_at_configured_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process_result = _process_result(
+        SignalTermination(number=signal.SIGKILL, name="SIGKILL")
+    )
+    cursors: list[str] = []
+    sleeps: list[float] = []
+
+    def read_kernel_log_after(cursor: str) -> KernelLogAvailable:
+        cursors.append(cursor)
+        return KernelLogAvailable(messages=())
+
+    monkeypatch.setattr(
+        "whydied.inspect.read_kernel_cursor",
+        lambda: KernelCursorAvailable(cursor="original-cursor"),
+    )
+    monkeypatch.setattr(
+        "whydied.inspect.run_process",
+        lambda _command: process_result,
+    )
+    monkeypatch.setattr("whydied.inspect.read_kernel_log_after", read_kernel_log_after)
+    monkeypatch.setattr("whydied.inspect._sleep", sleeps.append)
+
+    result = inspect_process(["python"])
+
+    assert result.diagnosis == Diagnosis(
+        cause=DiagnosisCause.UNKNOWN,
+        kernel_evidence=KernelEvidenceStatus.NO_OOM_VICTIM_MATCH,
+    )
+    assert sleeps == [0.1] * 5
+    assert cursors == ["original-cursor"] * 6
 
 
 def test_inspect_process_run_process_error_skips_kernel_and_diagnosis(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    kernel_called = False
-    diagnosis_called = False
+    events: list[str] = []
 
-    def utc_now() -> datetime:
-        return datetime(2025, 1, 2, 3, 4, 5, tzinfo=UTC)
+    def read_kernel_cursor() -> KernelCursorAvailable:
+        events.append("read_kernel_cursor")
+        return KernelCursorAvailable(cursor="cursor-value")
 
     def run_process(_command: list[str]) -> ProcessResult:
+        events.append("run_process")
         raise RuntimeError("child failed to start")
 
-    def read_kernel_log(
-        *, since: datetime | None, until: datetime | None
-    ) -> KernelLogAvailable:
-        nonlocal kernel_called
-        kernel_called = True
+    def read_kernel_log_after(_cursor: str) -> KernelLogAvailable:
+        events.append("read_kernel_log_after")
         return KernelLogAvailable(messages=())
 
     def diagnose_process(
         _process_result: ProcessResult,
         _kernel_log: KernelLogAvailable,
     ) -> Diagnosis:
-        nonlocal diagnosis_called
-        diagnosis_called = True
-        return _diagnosis(KernelEvidenceStatus.NO_OOM_VICTIM_MATCH)
+        events.append("diagnose_process")
+        return Diagnosis(
+            cause=DiagnosisCause.UNKNOWN,
+            kernel_evidence=KernelEvidenceStatus.NO_OOM_VICTIM_MATCH,
+        )
 
-    monkeypatch.setattr("whydied.inspect._utc_now", utc_now)
+    monkeypatch.setattr("whydied.inspect.read_kernel_cursor", read_kernel_cursor)
     monkeypatch.setattr("whydied.inspect.run_process", run_process)
-    monkeypatch.setattr("whydied.inspect.read_kernel_log", read_kernel_log)
+    monkeypatch.setattr("whydied.inspect.read_kernel_log_after", read_kernel_log_after)
     monkeypatch.setattr("whydied.inspect.diagnose_process", diagnose_process)
 
     with pytest.raises(RuntimeError, match="child failed to start"):
         inspect_process(["python"])
 
-    assert kernel_called is False
-    assert diagnosis_called is False
+    assert events == ["read_kernel_cursor", "run_process"]
