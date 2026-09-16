@@ -24,7 +24,7 @@ _DEFAULT_PROC_STATUS = ProcStatus(
 def _inspection(
     *,
     termination: ExitTermination | SignalTermination = _DEFAULT_TERMINATION,
-    cause: DiagnosisCause = DiagnosisCause.UNKNOWN,
+    cause: DiagnosisCause = DiagnosisCause.CLEAN_EXIT,
     kernel_evidence: KernelEvidenceStatus = (KernelEvidenceStatus.NO_OOM_VICTIM_MATCH),
     proc_status: ProcStatus | None = _DEFAULT_PROC_STATUS,
 ) -> InspectionResult:
@@ -45,7 +45,7 @@ def _inspection(
     )
 
 
-def test_format_report_for_normal_exit_and_unknown_diagnosis() -> None:
+def test_format_report_for_normal_exit_and_clean_exit_diagnosis() -> None:
     report = format_report(_inspection())
 
     assert (
@@ -57,13 +57,32 @@ def test_format_report_for_normal_exit_and_unknown_diagnosis() -> None:
   Termination: exit 0
 
 Diagnosis:
-  Cause: unknown
+  Cause: clean exit
   Kernel evidence: no matching OOM victim
 
 Memory:
   RSS: 1.00 MiB
   Peak RSS: 2.00 MiB"""
     )
+
+
+@pytest.mark.parametrize(
+    ("cause", "label"),
+    (
+        (DiagnosisCause.CLEAN_EXIT, "clean exit"),
+        (DiagnosisCause.NON_ZERO_EXIT, "non-zero exit"),
+        (DiagnosisCause.SIGNAL, "signal termination"),
+        (DiagnosisCause.OOM_KILL, "OOM kill"),
+        (DiagnosisCause.UNKNOWN, "unknown"),
+    ),
+)
+def test_format_report_formats_diagnosis_causes(
+    cause: DiagnosisCause,
+    label: str,
+) -> None:
+    report = format_report(_inspection(cause=cause))
+
+    assert f"  Cause: {label}" in report
 
 
 def test_format_report_for_signal_termination_and_confirmed_oom() -> None:

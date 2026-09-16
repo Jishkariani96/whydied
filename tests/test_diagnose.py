@@ -96,51 +96,111 @@ def test_sigkill_with_unavailable_kernel_evidence_is_unknown_unavailable() -> No
     )
 
 
-def test_clean_exit_with_matching_oom_victim_pid_is_unknown_with_match() -> None:
+def test_clean_exit_with_empty_kernel_log_is_clean_exit_without_match() -> None:
+    diagnosis = diagnose_process(
+        _process_result(ExitTermination(code=0)),
+        KernelLogAvailable(messages=()),
+    )
+
+    assert diagnosis == Diagnosis(
+        cause=DiagnosisCause.CLEAN_EXIT,
+        kernel_evidence=KernelEvidenceStatus.NO_OOM_VICTIM_MATCH,
+    )
+
+
+def test_non_zero_exit_with_empty_kernel_log_is_non_zero_exit_without_match() -> None:
+    diagnosis = diagnose_process(
+        _process_result(ExitTermination(code=3)),
+        KernelLogAvailable(messages=()),
+    )
+
+    assert diagnosis == Diagnosis(
+        cause=DiagnosisCause.NON_ZERO_EXIT,
+        kernel_evidence=KernelEvidenceStatus.NO_OOM_VICTIM_MATCH,
+    )
+
+
+def test_sigsegv_with_empty_kernel_log_is_signal_without_match() -> None:
+    diagnosis = diagnose_process(
+        _process_result(SignalTermination(number=signal.SIGSEGV, name="SIGSEGV")),
+        KernelLogAvailable(messages=()),
+    )
+
+    assert diagnosis == Diagnosis(
+        cause=DiagnosisCause.SIGNAL,
+        kernel_evidence=KernelEvidenceStatus.NO_OOM_VICTIM_MATCH,
+    )
+
+
+def test_sigterm_with_unavailable_kernel_log_is_signal_unavailable() -> None:
+    diagnosis = diagnose_process(
+        _process_result(SignalTermination(number=signal.SIGTERM, name="SIGTERM")),
+        KernelLogUnavailable(reason="journalctl unavailable"),
+    )
+
+    assert diagnosis == Diagnosis(
+        cause=DiagnosisCause.SIGNAL,
+        kernel_evidence=KernelEvidenceStatus.UNAVAILABLE,
+    )
+
+
+def test_clean_exit_with_matching_oom_victim_pid_is_clean_exit_with_match() -> None:
     diagnosis = diagnose_process(
         _process_result(ExitTermination(code=0)),
         _available_with_victim(1234),
     )
 
     assert diagnosis == Diagnosis(
-        cause=DiagnosisCause.UNKNOWN,
+        cause=DiagnosisCause.CLEAN_EXIT,
         kernel_evidence=KernelEvidenceStatus.OOM_VICTIM_MATCH,
     )
 
 
-def test_non_zero_exit_with_matching_oom_victim_pid_is_unknown_with_match() -> None:
+def test_non_zero_exit_with_matching_oom_victim_pid_is_non_zero_exit() -> None:
     diagnosis = diagnose_process(
         _process_result(ExitTermination(code=3)),
         _available_with_victim(1234),
     )
 
     assert diagnosis == Diagnosis(
-        cause=DiagnosisCause.UNKNOWN,
+        cause=DiagnosisCause.NON_ZERO_EXIT,
         kernel_evidence=KernelEvidenceStatus.OOM_VICTIM_MATCH,
     )
 
 
-def test_sigterm_with_matching_oom_victim_pid_is_unknown_with_match() -> None:
+def test_sigterm_with_matching_oom_victim_pid_is_signal_with_match() -> None:
     diagnosis = diagnose_process(
         _process_result(SignalTermination(number=signal.SIGTERM, name="SIGTERM")),
         _available_with_victim(1234),
     )
 
     assert diagnosis == Diagnosis(
-        cause=DiagnosisCause.UNKNOWN,
+        cause=DiagnosisCause.SIGNAL,
         kernel_evidence=KernelEvidenceStatus.OOM_VICTIM_MATCH,
     )
 
 
-def test_sigsegv_with_matching_oom_victim_pid_is_unknown_with_match() -> None:
+def test_sigsegv_with_matching_oom_victim_pid_is_signal_with_match() -> None:
     diagnosis = diagnose_process(
         _process_result(SignalTermination(number=signal.SIGSEGV, name="SIGSEGV")),
         _available_with_victim(1234),
     )
 
     assert diagnosis == Diagnosis(
-        cause=DiagnosisCause.UNKNOWN,
+        cause=DiagnosisCause.SIGNAL,
         kernel_evidence=KernelEvidenceStatus.OOM_VICTIM_MATCH,
+    )
+
+
+def test_clean_exit_with_unavailable_kernel_evidence_stays_clean_exit() -> None:
+    diagnosis = diagnose_process(
+        _process_result(ExitTermination(code=0)),
+        KernelLogUnavailable(reason="journalctl unavailable"),
+    )
+
+    assert diagnosis == Diagnosis(
+        cause=DiagnosisCause.CLEAN_EXIT,
+        kernel_evidence=KernelEvidenceStatus.UNAVAILABLE,
     )
 
 

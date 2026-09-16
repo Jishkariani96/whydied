@@ -49,6 +49,9 @@ def _format_termination(termination: ExitTermination | SignalTermination) -> str
 
 def _format_cause(cause: DiagnosisCause) -> str:
     return {
+        DiagnosisCause.CLEAN_EXIT: "clean exit",
+        DiagnosisCause.NON_ZERO_EXIT: "non-zero exit",
+        DiagnosisCause.SIGNAL: "signal termination",
         DiagnosisCause.OOM_KILL: "OOM kill",
         DiagnosisCause.UNKNOWN: "unknown",
     }[cause]

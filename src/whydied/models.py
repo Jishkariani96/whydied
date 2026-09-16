@@ -22,6 +22,9 @@ class OOMKillEvent:
 
 
 class DiagnosisCause(StrEnum):
+    CLEAN_EXIT = "clean_exit"
+    NON_ZERO_EXIT = "non_zero_exit"
+    SIGNAL = "signal"
     OOM_KILL = "oom_kill"
     UNKNOWN = "unknown"
 
