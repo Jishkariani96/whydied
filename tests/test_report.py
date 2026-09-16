@@ -58,7 +58,6 @@ def test_format_report_for_normal_exit_and_clean_exit_diagnosis() -> None:
 
 Diagnosis:
   Cause: clean exit
-  Kernel evidence: no matching OOM victim
 
 Memory:
   RSS: 1.00 MiB
@@ -85,6 +84,22 @@ def test_format_report_formats_diagnosis_causes(
     assert f"  Cause: {label}" in report
 
 
+@pytest.mark.parametrize(
+    "cause",
+    (
+        DiagnosisCause.CLEAN_EXIT,
+        DiagnosisCause.NON_ZERO_EXIT,
+        DiagnosisCause.SIGNAL,
+    ),
+)
+def test_format_report_omits_kernel_evidence_for_classified_termination(
+    cause: DiagnosisCause,
+) -> None:
+    report = format_report(_inspection(cause=cause))
+
+    assert "Kernel evidence:" not in report
+
+
 def test_format_report_for_signal_termination_and_confirmed_oom() -> None:
     report = format_report(
         _inspection(
@@ -100,11 +115,27 @@ def test_format_report_for_signal_termination_and_confirmed_oom() -> None:
     assert "  Kernel evidence: matching OOM victim found" in report
 
 
-def test_format_report_with_unavailable_kernel_evidence() -> None:
+def test_format_report_for_unknown_with_no_matching_oom_victim() -> None:
     report = format_report(
-        _inspection(kernel_evidence=KernelEvidenceStatus.UNAVAILABLE)
+        _inspection(
+            cause=DiagnosisCause.UNKNOWN,
+            kernel_evidence=KernelEvidenceStatus.NO_OOM_VICTIM_MATCH,
+        )
     )
 
+    assert "  Cause: unknown" in report
+    assert "  Kernel evidence: no matching OOM victim" in report
+
+
+def test_format_report_for_unknown_with_unavailable_kernel_evidence() -> None:
+    report = format_report(
+        _inspection(
+            cause=DiagnosisCause.UNKNOWN,
+            kernel_evidence=KernelEvidenceStatus.UNAVAILABLE,
+        )
+    )
+
+    assert "  Cause: unknown" in report
     assert "  Kernel evidence: unavailable" in report
 
 

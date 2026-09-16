@@ -23,10 +23,14 @@ def format_report(inspection: InspectionResult) -> str:
         "",
         "Diagnosis:",
         f"  Cause: {_format_cause(diagnosis.cause)}",
-        f"  Kernel evidence: {_format_kernel_evidence(diagnosis.kernel_evidence)}",
-        "",
-        "Memory:",
     ]
+
+    if diagnosis.cause in (DiagnosisCause.OOM_KILL, DiagnosisCause.UNKNOWN):
+        lines.append(
+            f"  Kernel evidence: {_format_kernel_evidence(diagnosis.kernel_evidence)}"
+        )
+
+    lines.extend(("", "Memory:"))
 
     if process.proc_status is None:
         lines.append("  unavailable")
