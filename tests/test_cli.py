@@ -109,70 +109,28 @@ def test_missing_child_command_fails_cleanly_without_inspection(
     assert inspection_called is False
 
 
-def test_child_command_is_passed_unchanged_after_separator(
+def test_child_command_is_inspected_and_result_is_delegated_to_report(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     command = ["python", "-c", "raise SystemExit(0)"]
-    calls: list[list[str]] = []
+    inspection = _inspection_result(ExitTermination(code=0))
+    inspected_commands: list[list[str]] = []
+    formatted_inspections: list[InspectionResult] = []
 
     def inspect_process(command_arg: list[str]) -> InspectionResult:
-        calls.append(command_arg)
-        return _inspection_result(ExitTermination(code=0))
+        inspected_commands.append(command_arg)
+        return inspection
+
+    def format_report(inspection_arg: InspectionResult) -> str:
+        formatted_inspections.append(inspection_arg)
+        return "formatted report"
 
     monkeypatch.setattr("whydied.cli.inspect_process", inspect_process)
+    monkeypatch.setattr("whydied.cli.format_report", format_report)
 
     main(["--", *command])
 
-    assert calls == [command]
-
-
-def test_clean_child_exit_output_uses_inspection_process(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    def inspect_process(_command: list[str]) -> InspectionResult:
-        return _inspection_result(
-            ExitTermination(code=0), pid=4321, runtime_seconds=1.25
-        )
-
-    monkeypatch.setattr("whydied.cli.inspect_process", inspect_process)
-
-    main(["--", "child"])
-
-    output = capsys.readouterr().out
-    assert "PID: 4321" in output
-    assert "Runtime: 1.25s" in output
-    assert "Return code: 0" in output
-    assert "Termination: exit 0" in output
-
-
-def test_non_zero_child_exit_output_uses_inspection_process(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    def inspect_process(_command: list[str]) -> InspectionResult:
-        return _inspection_result(ExitTermination(code=3))
-
-    monkeypatch.setattr("whydied.cli.inspect_process", inspect_process)
-
-    main(["--", "child"])
-
-    output = capsys.readouterr().out
-    assert "Return code: 3" in output
-    assert "Termination: exit 3" in output
-
-
-def test_signal_termination_output_uses_inspection_process(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    def inspect_process(_command: list[str]) -> InspectionResult:
-        return _inspection_result(SignalTermination(number=9, name="SIGKILL"))
-
-    monkeypatch.setattr("whydied.cli.inspect_process", inspect_process)
-
-    main(["--", "child"])
-
-    output = capsys.readouterr().out
-    assert "Return code: -9" in output
-    assert "Termination: SIGKILL (9)" in output
+    assert inspected_commands == [command]
+    assert formatted_inspections == [inspection]
+    assert capsys.readouterr().out == "formatted report\n"
