@@ -16,6 +16,19 @@ KernelLog = KernelLogAvailable | KernelLogUnavailable
 
 
 @dataclass(frozen=True)
+class KernelCursorAvailable:
+    cursor: str
+
+
+@dataclass(frozen=True)
+class KernelCursorUnavailable:
+    reason: str
+
+
+KernelCursor = KernelCursorAvailable | KernelCursorUnavailable
+
+
+@dataclass(frozen=True)
 class OOMKillEvent:
     victim_pid: int
     victim_name: str

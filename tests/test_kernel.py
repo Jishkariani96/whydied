@@ -3,8 +3,143 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from whydied.kernel import parse_oom_kill_events, read_kernel_log
-from whydied.models import KernelLogAvailable, KernelLogUnavailable, OOMKillEvent
+from whydied.kernel import parse_oom_kill_events, read_kernel_cursor, read_kernel_log
+from whydied.models import (
+    KernelCursorAvailable,
+    KernelCursorUnavailable,
+    KernelLogAvailable,
+    KernelLogUnavailable,
+    OOMKillEvent,
+)
+
+
+def test_read_kernel_cursor_extracts_cursor(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run_journalctl(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["journalctl"],
+            returncode=0,
+            stdout="kernel message\n  -- cursor: s=abc123;i=456  \n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    assert read_kernel_cursor() == KernelCursorAvailable(cursor="s=abc123;i=456")
+
+
+def test_read_kernel_cursor_constructs_deterministic_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def run_journalctl(
+        *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="-- cursor: cursor-value\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    read_kernel_cursor()
+
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == (["journalctl", "-k", "--no-pager", "--show-cursor", "-n", "1"],)
+    assert kwargs["capture_output"] is True
+    assert kwargs["text"] is True
+    assert kwargs["check"] is False
+    assert kwargs.get("shell") is not True
+
+
+def test_read_kernel_cursor_success_without_cursor_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run_journalctl(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["journalctl"],
+            returncode=0,
+            stdout="kernel message only\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    assert read_kernel_cursor() == KernelCursorUnavailable(
+        reason="kernel journal cursor unavailable"
+    )
+
+
+def test_read_kernel_cursor_non_zero_exit_uses_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run_journalctl(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["journalctl"],
+            returncode=1,
+            stdout="",
+            stderr="permission denied\n",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    assert read_kernel_cursor() == KernelCursorUnavailable(reason="permission denied")
+
+
+def test_read_kernel_cursor_non_zero_exit_empty_stderr_has_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run_journalctl(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["journalctl"],
+            returncode=7,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    assert read_kernel_cursor() == KernelCursorUnavailable(
+        reason="journalctl exited with status 7"
+    )
+
+
+def test_read_kernel_cursor_missing_executable(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run_journalctl(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    assert read_kernel_cursor() == KernelCursorUnavailable(
+        reason="journalctl executable not found"
+    )
+
+
+def test_read_kernel_cursor_os_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run_journalctl(
+        *_args: object, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        raise OSError("execution failed deterministically")
+
+    monkeypatch.setattr("whydied.kernel.subprocess.run", run_journalctl)
+
+    assert read_kernel_cursor() == KernelCursorUnavailable(
+        reason="failed to run journalctl: execution failed deterministically"
+    )
 
 
 def test_read_kernel_log_successful_messages(monkeypatch: pytest.MonkeyPatch) -> None:
