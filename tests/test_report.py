@@ -100,6 +100,58 @@ def test_format_report_omits_kernel_evidence_for_classified_termination(
     assert "Kernel evidence:" not in report
 
 
+@pytest.mark.parametrize(
+    ("number", "name", "explanation"),
+    (
+        (11, "SIGSEGV", "segmentation fault"),
+        (15, "SIGTERM", "termination request"),
+        (6, "SIGABRT", "abort signal"),
+    ),
+)
+def test_format_report_explains_mapped_signal_termination(
+    number: int,
+    name: str,
+    explanation: str,
+) -> None:
+    report = format_report(
+        _inspection(
+            termination=SignalTermination(number=number, name=name),
+            cause=DiagnosisCause.SIGNAL,
+        )
+    )
+
+    assert f"  Detail: process received {name} ({explanation})" in report
+
+
+def test_format_report_uses_generic_detail_for_unmapped_signal() -> None:
+    report = format_report(
+        _inspection(
+            termination=SignalTermination(number=10, name="SIGUSR1"),
+            cause=DiagnosisCause.SIGNAL,
+        )
+    )
+
+    assert "  Detail: process received SIGUSR1" in report
+
+
+@pytest.mark.parametrize(
+    ("code", "cause"),
+    (
+        (0, DiagnosisCause.CLEAN_EXIT),
+        (2, DiagnosisCause.NON_ZERO_EXIT),
+    ),
+)
+def test_format_report_omits_detail_for_exit_termination(
+    code: int,
+    cause: DiagnosisCause,
+) -> None:
+    report = format_report(
+        _inspection(termination=ExitTermination(code=code), cause=cause)
+    )
+
+    assert "  Detail:" not in report
+
+
 def test_format_report_for_signal_termination_and_confirmed_oom() -> None:
     report = format_report(
         _inspection(
@@ -112,6 +164,7 @@ def test_format_report_for_signal_termination_and_confirmed_oom() -> None:
     assert "  Return code: -9" in report
     assert "  Termination: SIGKILL (9)" in report
     assert "  Cause: OOM kill" in report
+    assert "  Detail: process received SIGKILL" in report
     assert "  Kernel evidence: matching OOM victim found" in report
 
 

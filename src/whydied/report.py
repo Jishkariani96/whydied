@@ -8,6 +8,12 @@ from whydied.models import (
 
 _MIB = 1024 * 1024
 
+_SIGNAL_EXPLANATIONS = {
+    "SIGABRT": "abort signal",
+    "SIGSEGV": "segmentation fault",
+    "SIGTERM": "termination request",
+}
+
 
 def format_report(inspection: InspectionResult) -> str:
     """Format an inspection result as a deterministic human-readable report."""
@@ -24,6 +30,9 @@ def format_report(inspection: InspectionResult) -> str:
         "Diagnosis:",
         f"  Cause: {_format_cause(diagnosis.cause)}",
     ]
+
+    if isinstance(process.termination, SignalTermination):
+        lines.append(f"  Detail: {_format_signal_detail(process.termination)}")
 
     if diagnosis.cause in (DiagnosisCause.OOM_KILL, DiagnosisCause.UNKNOWN):
         lines.append(
@@ -49,6 +58,14 @@ def _format_termination(termination: ExitTermination | SignalTermination) -> str
     if isinstance(termination, ExitTermination):
         return f"exit {termination.code}"
     return f"{termination.name} ({termination.number})"
+
+
+def _format_signal_detail(termination: SignalTermination) -> str:
+    detail = f"process received {termination.name}"
+    explanation = _SIGNAL_EXPLANATIONS.get(termination.name)
+    if explanation is not None:
+        detail += f" ({explanation})"
+    return detail
 
 
 def _format_cause(cause: DiagnosisCause) -> str:
