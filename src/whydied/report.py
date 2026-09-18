@@ -33,6 +33,10 @@ def format_report(inspection: InspectionResult) -> str:
 
     if isinstance(process.termination, SignalTermination):
         lines.append(f"  Detail: {_format_signal_detail(process.termination)}")
+    elif diagnosis.cause == DiagnosisCause.NON_ZERO_EXIT:
+        lines.append(
+            f"  Detail: process exited with non-zero status {process.termination.code}"
+        )
 
     if diagnosis.cause in (DiagnosisCause.OOM_KILL, DiagnosisCause.UNKNOWN):
         lines.append(

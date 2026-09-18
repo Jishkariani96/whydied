@@ -134,19 +134,23 @@ def test_format_report_uses_generic_detail_for_unmapped_signal() -> None:
     assert "  Detail: process received SIGUSR1" in report
 
 
-@pytest.mark.parametrize(
-    ("code", "cause"),
-    (
-        (0, DiagnosisCause.CLEAN_EXIT),
-        (2, DiagnosisCause.NON_ZERO_EXIT),
-    ),
-)
-def test_format_report_omits_detail_for_exit_termination(
-    code: int,
-    cause: DiagnosisCause,
-) -> None:
+def test_format_report_explains_non_zero_exit() -> None:
     report = format_report(
-        _inspection(termination=ExitTermination(code=code), cause=cause)
+        _inspection(
+            termination=ExitTermination(code=3),
+            cause=DiagnosisCause.NON_ZERO_EXIT,
+        )
+    )
+
+    assert "  Detail: process exited with non-zero status 3" in report
+
+
+def test_format_report_omits_detail_for_clean_exit() -> None:
+    report = format_report(
+        _inspection(
+            termination=ExitTermination(code=0),
+            cause=DiagnosisCause.CLEAN_EXIT,
+        )
     )
 
     assert "  Detail:" not in report
