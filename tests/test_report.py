@@ -18,6 +18,7 @@ _DEFAULT_PROC_STATUS = ProcStatus(
     state="R (running)",
     rss_bytes=1024 * 1024,
     peak_rss_bytes=2 * 1024 * 1024,
+    peak_swap_bytes=3 * 1024 * 1024,
 )
 
 
@@ -61,7 +62,8 @@ Diagnosis:
 
 Memory:
   RSS: 1.00 MiB
-  Peak RSS: 2.00 MiB"""
+  Peak RSS: 2.00 MiB
+  Peak swap: 3.00 MiB"""
     )
 
 
@@ -203,15 +205,32 @@ def test_format_report_with_unavailable_proc_status() -> None:
 
 
 @pytest.mark.parametrize(
-    ("rss_bytes", "peak_rss_bytes", "expected_memory"),
+    ("rss_bytes", "peak_rss_bytes", "peak_swap_bytes", "expected_memory"),
     (
-        (None, 2 * 1024 * 1024, "RSS: unavailable\n  Peak RSS: 2.00 MiB"),
-        (1024 * 1024, None, "RSS: 1.00 MiB\n  Peak RSS: unavailable"),
+        (
+            None,
+            2 * 1024 * 1024,
+            3 * 1024 * 1024,
+            "RSS: unavailable\n  Peak RSS: 2.00 MiB\n  Peak swap: 3.00 MiB",
+        ),
+        (
+            1024 * 1024,
+            None,
+            3 * 1024 * 1024,
+            "RSS: 1.00 MiB\n  Peak RSS: unavailable\n  Peak swap: 3.00 MiB",
+        ),
+        (
+            1024 * 1024,
+            2 * 1024 * 1024,
+            None,
+            "RSS: 1.00 MiB\n  Peak RSS: 2.00 MiB\n  Peak swap: unavailable",
+        ),
     ),
 )
 def test_format_report_with_individual_missing_memory_fields(
     rss_bytes: int | None,
     peak_rss_bytes: int | None,
+    peak_swap_bytes: int | None,
     expected_memory: str,
 ) -> None:
     report = format_report(
@@ -220,6 +239,7 @@ def test_format_report_with_individual_missing_memory_fields(
                 state=None,
                 rss_bytes=rss_bytes,
                 peak_rss_bytes=peak_rss_bytes,
+                peak_swap_bytes=peak_swap_bytes,
             )
         )
     )
@@ -234,8 +254,11 @@ def test_format_report_converts_bytes_to_mebibytes_deterministically() -> None:
                 state=None,
                 rss_bytes=1_572_864,
                 peak_rss_bytes=2_621_440,
+                peak_swap_bytes=524_288,
             )
         )
     )
 
-    assert report.endswith("Memory:\n  RSS: 1.50 MiB\n  Peak RSS: 2.50 MiB")
+    assert report.endswith(
+        "Memory:\n  RSS: 1.50 MiB\n  Peak RSS: 2.50 MiB\n  Peak swap: 0.50 MiB"
+    )

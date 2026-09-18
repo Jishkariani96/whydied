@@ -59,6 +59,7 @@ class ProcStatus:
     state: str | None
     rss_bytes: int | None
     peak_rss_bytes: int | None
+    peak_swap_bytes: int | None
 
 
 @dataclass(frozen=True)

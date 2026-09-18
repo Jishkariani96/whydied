@@ -52,6 +52,7 @@ def format_report(inspection: InspectionResult) -> str:
             (
                 f"  RSS: {_format_memory(process.proc_status.rss_bytes)}",
                 f"  Peak RSS: {_format_memory(process.proc_status.peak_rss_bytes)}",
+                f"  Peak swap: {_format_memory(process.proc_status.peak_swap_bytes)}",
             )
         )
 

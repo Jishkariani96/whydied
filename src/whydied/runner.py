@@ -36,12 +36,20 @@ def _merge_proc_status(
         else:
             peak_rss_bytes = max(peak_rss_bytes, observed.peak_rss_bytes)
 
+    peak_swap_bytes = current.peak_swap_bytes
+    if observed.peak_swap_bytes is not None:
+        if peak_swap_bytes is None:
+            peak_swap_bytes = observed.peak_swap_bytes
+        else:
+            peak_swap_bytes = max(peak_swap_bytes, observed.peak_swap_bytes)
+
     return ProcStatus(
         state=observed.state if observed.state is not None else current.state,
         rss_bytes=observed.rss_bytes
         if observed.rss_bytes is not None
         else current.rss_bytes,
         peak_rss_bytes=peak_rss_bytes,
+        peak_swap_bytes=peak_swap_bytes,
     )
 
 

@@ -22,6 +22,18 @@ def test_parse_peak_rss_converts_kb_to_bytes() -> None:
     assert status.peak_rss_bytes == 456 * 1024
 
 
+def test_parse_swap_converts_kb_to_bytes() -> None:
+    status = _parse_proc_status("VmSwap:\t789 kB\n")
+
+    assert status.peak_swap_bytes == 789 * 1024
+
+
+def test_parse_missing_swap_is_none() -> None:
+    status = _parse_proc_status("VmRSS:\t123 kB\n")
+
+    assert status.peak_swap_bytes is None
+
+
 def test_parse_missing_fields_are_none() -> None:
     status = _parse_proc_status("Name:\tpython\n")
 
@@ -29,18 +41,21 @@ def test_parse_missing_fields_are_none() -> None:
         state=None,
         rss_bytes=None,
         peak_rss_bytes=None,
+        peak_swap_bytes=None,
     )
 
 
 def test_parse_proc_status_combines_supported_fields() -> None:
     status = _parse_proc_status(
-        "Name:\tpython\nState:\tR (running)\nVmRSS:\t10 kB\nVmHWM:\t20 kB\n"
+        "Name:\tpython\nState:\tR (running)\n"
+        "VmRSS:\t10 kB\nVmHWM:\t20 kB\nVmSwap:\t30 kB\n"
     )
 
     assert status == ProcStatus(
         state="R (running)",
         rss_bytes=10 * 1024,
         peak_rss_bytes=20 * 1024,
+        peak_swap_bytes=30 * 1024,
     )
 
 

@@ -3,7 +3,7 @@ import sys
 import pytest
 
 from whydied.models import ExitTermination, ProcStatus, SignalTermination
-from whydied.runner import decode_termination, run_process
+from whydied.runner import _merge_proc_status, decode_termination, run_process
 
 
 def test_decode_zero_exit_code() -> None:
@@ -96,6 +96,27 @@ def test_observed_rss_values_are_integer_or_none() -> None:
         result.proc_status.peak_rss_bytes,
         int,
     )
+    assert result.proc_status.peak_swap_bytes is None or isinstance(
+        result.proc_status.peak_swap_bytes,
+        int,
+    )
+
+
+def test_merge_proc_status_keeps_maximum_observed_swap() -> None:
+    current = ProcStatus(
+        state="S (sleeping)",
+        rss_bytes=10,
+        peak_rss_bytes=30,
+        peak_swap_bytes=50,
+    )
+    observed = ProcStatus(
+        state="R (running)",
+        rss_bytes=20,
+        peak_rss_bytes=25,
+        peak_swap_bytes=60,
+    )
+
+    assert _merge_proc_status(current, observed).peak_swap_bytes == 60
 
 
 def test_very_short_lived_child_may_have_no_proc_status(
@@ -113,8 +134,18 @@ def test_runner_handles_proc_status_becoming_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     observations = [
-        ProcStatus(state="S (sleeping)", rss_bytes=10, peak_rss_bytes=30),
-        ProcStatus(state="R (running)", rss_bytes=20, peak_rss_bytes=25),
+        ProcStatus(
+            state="S (sleeping)",
+            rss_bytes=10,
+            peak_rss_bytes=30,
+            peak_swap_bytes=40,
+        ),
+        ProcStatus(
+            state="R (running)",
+            rss_bytes=20,
+            peak_rss_bytes=25,
+            peak_swap_bytes=35,
+        ),
     ]
 
     def read_status(_pid: int) -> ProcStatus | None:
@@ -131,4 +162,5 @@ def test_runner_handles_proc_status_becoming_unavailable(
         state="R (running)",
         rss_bytes=20,
         peak_rss_bytes=30,
+        peak_swap_bytes=40,
     )

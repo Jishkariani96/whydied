@@ -11,6 +11,7 @@ def _parse_proc_status(text: str) -> ProcStatus:
     state: str | None = None
     rss_bytes: int | None = None
     peak_rss_bytes: int | None = None
+    peak_swap_bytes: int | None = None
 
     for line in text.splitlines():
         key, separator, value = line.partition(":")
@@ -24,11 +25,14 @@ def _parse_proc_status(text: str) -> ProcStatus:
             rss_bytes = _parse_kb_value(value)
         elif key == "VmHWM":
             peak_rss_bytes = _parse_kb_value(value)
+        elif key == "VmSwap":
+            peak_swap_bytes = _parse_kb_value(value)
 
     return ProcStatus(
         state=state,
         rss_bytes=rss_bytes,
         peak_rss_bytes=peak_rss_bytes,
+        peak_swap_bytes=peak_swap_bytes,
     )
 
 
