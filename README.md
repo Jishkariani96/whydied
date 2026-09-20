@@ -1,11 +1,40 @@
 # whydied
 
+[![CI](https://github.com/Jishkariani96/whydied/actions/workflows/ci.yml/badge.svg)](https://github.com/Jishkariani96/whydied/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 **Evidence-based process termination diagnostics for Linux.**
 
 `whydied` runs a command, observes how it terminates, samples its memory use, and
 uses available kernel evidence to explain the result. It preserves the child's
 standard input, output, and error streams and propagates a shell-compatible exit
 status.
+
+## Quick example
+
+```bash
+whydied -- python examples/segfault.py
+```
+
+```text
+Process:
+  PID: 24132
+  Runtime: 0.25s
+  Return code: -11
+  Termination: SIGSEGV (11)
+
+Diagnosis:
+  Cause: signal termination
+  Detail: process received SIGSEGV (segmentation fault)
+
+Memory:
+  RSS: 10.05 MiB
+  Peak RSS: 10.05 MiB
+  Peak swap: 0.00 MiB
+```
+
+`whydied` reports what it directly observes and only attributes a cause when the available evidence supports it. A `SIGKILL` alone, for example, is never treated as proof of an OOM kill.
 
 The core rule is:
 
