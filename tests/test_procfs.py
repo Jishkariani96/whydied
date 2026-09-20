@@ -1,4 +1,7 @@
 import os
+from pathlib import Path
+
+import pytest
 
 from whydied.models import ProcStatus
 from whydied.procfs import _parse_proc_status, read_proc_status
@@ -61,6 +64,38 @@ def test_parse_proc_status_combines_supported_fields() -> None:
 
 def test_nonexistent_pid_returns_none() -> None:
     assert read_proc_status(-1) is None
+
+
+def test_read_proc_status_tolerates_non_utf8_content(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    status_path = tmp_path / "status"
+    status_path.write_bytes(
+        b"Name:\tinvalid-\xff-name\nState:\tS (sleeping)\nVmRSS:\t123 kB\n"
+    )
+    monkeypatch.setattr(
+        "builtins.open",
+        lambda *_args, **kwargs: status_path.open(**kwargs),
+    )
+
+    assert read_proc_status(1234) == ProcStatus(
+        state="S (sleeping)",
+        rss_bytes=123 * 1024,
+        peak_rss_bytes=None,
+        peak_swap_bytes=None,
+    )
+
+
+def test_read_proc_status_permission_denied_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def deny_access(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("procfs access denied")
+
+    monkeypatch.setattr("builtins.open", deny_access)
+
+    assert read_proc_status(1234) is None
 
 
 def test_read_current_python_pid_status_returns_proc_status() -> None:

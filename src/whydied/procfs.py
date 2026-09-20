@@ -38,7 +38,11 @@ def _parse_proc_status(text: str) -> ProcStatus:
 
 def read_proc_status(pid: int) -> ProcStatus | None:
     try:
-        with open(f"/proc/{pid}/status", encoding="utf-8") as status_file:
+        with open(
+            f"/proc/{pid}/status",
+            encoding="utf-8",
+            errors="replace",
+        ) as status_file:
             return _parse_proc_status(status_file.read())
-    except FileNotFoundError:
+    except OSError:
         return None

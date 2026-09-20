@@ -130,6 +130,27 @@ def test_very_short_lived_child_may_have_no_proc_status(
     assert result.proc_status is None
 
 
+def test_runner_continues_waiting_when_proc_status_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sample_attempts = 0
+
+    def read_status(_pid: int) -> None:
+        nonlocal sample_attempts
+        sample_attempts += 1
+
+    monkeypatch.setattr("whydied.runner.read_proc_status", read_status)
+
+    result = run_process(
+        [sys.executable, "-c", "import time; time.sleep(0.12); raise SystemExit(7)"]
+    )
+
+    assert sample_attempts >= 2
+    assert result.returncode == 7
+    assert result.termination == ExitTermination(code=7)
+    assert result.proc_status is None
+
+
 def test_runner_handles_proc_status_becoming_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
