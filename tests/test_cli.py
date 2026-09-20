@@ -109,6 +109,53 @@ def test_missing_child_command_fails_cleanly_without_inspection(
     assert inspection_called is False
 
 
+@pytest.mark.parametrize(
+    ("launch_error", "expected_error"),
+    [
+        (
+            FileNotFoundError(2, "No such file or directory", "missing-command"),
+            "No such file or directory",
+        ),
+        (
+            PermissionError(13, "Permission denied", "not-executable"),
+            "Permission denied",
+        ),
+    ],
+)
+def test_child_launch_failure_fails_cleanly_without_formatting(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    launch_error: OSError,
+    expected_error: str,
+) -> None:
+    inspected_commands: list[list[str]] = []
+    format_called = False
+
+    def inspect_process(command: list[str]) -> InspectionResult:
+        inspected_commands.append(command)
+        raise launch_error
+
+    def format_report(_inspection: InspectionResult) -> str:
+        nonlocal format_called
+        format_called = True
+        return "unexpected report"
+
+    monkeypatch.setattr("whydied.cli.inspect_process", inspect_process)
+    monkeypatch.setattr("whydied.cli.format_report", format_report)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--", "child-command"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code != 0
+    assert inspected_commands == [["child-command"]]
+    assert format_called is False
+    assert captured.out == ""
+    assert "failed to start child process 'child-command'" in captured.err
+    assert expected_error in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_child_command_is_inspected_and_result_is_delegated_to_report(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

@@ -34,5 +34,9 @@ def main(argv: list[str] | None = None) -> None:
     if not command:
         parser.error("child command is required; use: whydied -- <command> [args...]")
 
-    inspection = inspect_process(command)
+    try:
+        inspection = inspect_process(command)
+    except OSError as exc:
+        parser.error(f"failed to start child process {command[0]!r}: {exc}")
+
     print(format_report(inspection))
