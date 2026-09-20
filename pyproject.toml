@@ -9,10 +9,19 @@ description = "Linux killed your process. Find out why."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [
-    { name = "Guri Jishkariani" }
+    { name = "Guram Jishkariani" }
+]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
 ]
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/Jishkariani96/whydied"
 
 [project.scripts]
 whydied = "whydied.cli:main"
