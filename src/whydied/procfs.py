@@ -7,8 +7,14 @@ _INITIAL_PID_NAMESPACE_INODE = 0xEFFFFFFC
 _KB_IN_BYTES = 1024
 
 
-def _parse_kb_value(value: str) -> int:
-    return int(value.split()[0]) * _KB_IN_BYTES
+def _parse_kb_value(value: str) -> int | None:
+    fields = value.split()
+    if not fields:
+        return None
+    try:
+        return int(fields[0]) * _KB_IN_BYTES
+    except ValueError:
+        return None
 
 
 def _parse_proc_status(text: str) -> ProcStatus:
@@ -17,7 +23,7 @@ def _parse_proc_status(text: str) -> ProcStatus:
     peak_rss_bytes: int | None = None
     peak_swap_bytes: int | None = None
 
-    for line in text.splitlines():
+    for line in text.split("\n"):
         key, separator, value = line.partition(":")
         if separator == "":
             continue

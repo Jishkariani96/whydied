@@ -151,6 +151,25 @@ def test_runner_continues_waiting_when_proc_status_is_unavailable(
     assert result.proc_status is None
 
 
+@pytest.mark.parametrize("process_name", [b"\x0bVmRSS:x", b"\x0bVmRSS:"])
+def test_process_name_cannot_break_supervision(process_name: bytes) -> None:
+    result = run_process(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import ctypes, time; "
+                f"assert ctypes.CDLL(None).prctl(15, {process_name!r}, 0, 0, 0) == 0; "
+                "time.sleep(0.2); raise SystemExit(7)"
+            ),
+        ]
+    )
+
+    assert result.returncode == 7
+    assert result.termination == ExitTermination(code=7)
+    assert result.proc_status is not None
+
+
 def test_runner_handles_proc_status_becoming_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

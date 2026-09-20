@@ -67,6 +67,29 @@ def test_parse_proc_status_combines_supported_fields() -> None:
     )
 
 
+@pytest.mark.parametrize("name", ["\x0bVmRSS:x", "\x0bVmRSS:"])
+def test_parse_proc_status_uses_newline_as_record_delimiter(name: str) -> None:
+    status = _parse_proc_status(
+        f"Name:\t{name}\nState:\tS (sleeping)\nVmRSS:\t123 kB\n"
+    )
+
+    assert status.state == "S (sleeping)"
+    assert status.rss_bytes == 123 * 1024
+
+
+@pytest.mark.parametrize("value", ["x", ""])
+def test_parse_proc_status_ignores_malformed_optional_numeric_value(
+    value: str,
+) -> None:
+    status = _parse_proc_status(
+        f"State:\tS (sleeping)\nVmRSS:\t{value}\nVmHWM:\t20 kB\n"
+    )
+
+    assert status.state == "S (sleeping)"
+    assert status.rss_bytes is None
+    assert status.peak_rss_bytes == 20 * 1024
+
+
 @pytest.mark.parametrize(
     ("inode", "expected"),
     [(0xEFFFFFFC, True), (0xF0000001, False)],
