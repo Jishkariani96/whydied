@@ -40,3 +40,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(f"failed to start child process {command[0]!r}: {exc}")
 
     print(format_report(inspection))
+
+    exit_status = inspection.process.returncode
+    if exit_status < 0:
+        exit_status = 128 - exit_status
+    raise SystemExit(exit_status)

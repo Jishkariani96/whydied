@@ -147,7 +147,7 @@ def test_child_launch_failure_fails_cleanly_without_formatting(
         main(["--", "child-command"])
 
     captured = capsys.readouterr()
-    assert exc_info.value.code != 0
+    assert exc_info.value.code == 2
     assert inspected_commands == [["child-command"]]
     assert format_called is False
     assert captured.out == ""
@@ -156,12 +156,14 @@ def test_child_launch_failure_fails_cleanly_without_formatting(
     assert "Traceback" not in captured.err
 
 
-def test_child_command_is_inspected_and_result_is_delegated_to_report(
+@pytest.mark.parametrize("child_exit_code", [0, 7])
+def test_child_exit_code_is_propagated_after_printing_report(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    child_exit_code: int,
 ) -> None:
-    command = ["python", "-c", "raise SystemExit(0)"]
-    inspection = _inspection_result(ExitTermination(code=0))
+    command = ["python", "-c", f"raise SystemExit({child_exit_code})"]
+    inspection = _inspection_result(ExitTermination(code=child_exit_code))
     inspected_commands: list[list[str]] = []
     formatted_inspections: list[InspectionResult] = []
 
@@ -176,8 +178,31 @@ def test_child_command_is_inspected_and_result_is_delegated_to_report(
     monkeypatch.setattr("whydied.cli.inspect_process", inspect_process)
     monkeypatch.setattr("whydied.cli.format_report", format_report)
 
-    main(["--", *command])
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--", *command])
 
+    assert exc_info.value.code == child_exit_code
     assert inspected_commands == [command]
     assert formatted_inspections == [inspection]
     assert capsys.readouterr().out == "formatted report\n"
+
+
+def test_signal_termination_uses_shell_compatible_exit_status(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    signal_number = 9
+    inspection = _inspection_result(
+        SignalTermination(number=signal_number, name="SIGKILL")
+    )
+    monkeypatch.setattr("whydied.cli.inspect_process", lambda _command: inspection)
+    monkeypatch.setattr(
+        "whydied.cli.format_report", lambda _inspection: "signal report"
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--", "child-command"])
+
+    # Shells conventionally encode signal termination as 128 + signal number.
+    assert exc_info.value.code == 128 + signal_number
+    assert capsys.readouterr().out == "signal report\n"
