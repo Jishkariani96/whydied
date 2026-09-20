@@ -44,11 +44,43 @@ def _available_with_victim(pid: int, name: str = "python") -> KernelLogAvailable
 
 
 def test_sigkill_with_matching_oom_victim_pid_diagnoses_oom_kill() -> None:
-    diagnosis = diagnose_process(_sigkill_result(), _available_with_victim(1234))
+    diagnosis = diagnose_process(
+        _sigkill_result(),
+        _available_with_victim(1234),
+        pid_namespace_is_initial=True,
+    )
 
     assert diagnosis == Diagnosis(
         cause=DiagnosisCause.OOM_KILL,
         kernel_evidence=KernelEvidenceStatus.OOM_VICTIM_MATCH,
+    )
+
+
+def test_matching_oom_pid_in_non_initial_namespace_is_not_confirmed() -> None:
+    diagnosis = diagnose_process(
+        _sigkill_result(),
+        _available_with_victim(1234),
+        pid_namespace_is_initial=False,
+    )
+
+    assert diagnosis == Diagnosis(
+        cause=DiagnosisCause.UNKNOWN,
+        kernel_evidence=KernelEvidenceStatus.UNAVAILABLE,
+    )
+
+
+def test_matching_oom_pid_with_namespace_evidence_unavailable_is_not_confirmed() -> (
+    None
+):
+    diagnosis = diagnose_process(
+        _sigkill_result(),
+        _available_with_victim(1234),
+        pid_namespace_is_initial=None,
+    )
+
+    assert diagnosis == Diagnosis(
+        cause=DiagnosisCause.UNKNOWN,
+        kernel_evidence=KernelEvidenceStatus.UNAVAILABLE,
     )
 
 
@@ -148,6 +180,7 @@ def test_clean_exit_with_matching_oom_victim_pid_is_clean_exit_with_match() -> N
     diagnosis = diagnose_process(
         _process_result(ExitTermination(code=0)),
         _available_with_victim(1234),
+        pid_namespace_is_initial=True,
     )
 
     assert diagnosis == Diagnosis(
@@ -160,6 +193,7 @@ def test_non_zero_exit_with_matching_oom_victim_pid_is_non_zero_exit() -> None:
     diagnosis = diagnose_process(
         _process_result(ExitTermination(code=3)),
         _available_with_victim(1234),
+        pid_namespace_is_initial=True,
     )
 
     assert diagnosis == Diagnosis(
@@ -172,6 +206,7 @@ def test_sigterm_with_matching_oom_victim_pid_is_signal_with_match() -> None:
     diagnosis = diagnose_process(
         _process_result(SignalTermination(number=signal.SIGTERM, name="SIGTERM")),
         _available_with_victim(1234),
+        pid_namespace_is_initial=True,
     )
 
     assert diagnosis == Diagnosis(
@@ -184,6 +219,7 @@ def test_sigsegv_with_matching_oom_victim_pid_is_signal_with_match() -> None:
     diagnosis = diagnose_process(
         _process_result(SignalTermination(number=signal.SIGSEGV, name="SIGSEGV")),
         _available_with_victim(1234),
+        pid_namespace_is_initial=True,
     )
 
     assert diagnosis == Diagnosis(
@@ -213,6 +249,7 @@ def test_multiple_oom_events_with_one_matching_pid_diagnoses_oom_for_sigkill() -
                 "Killed process 2222 (second)",
             )
         ),
+        pid_namespace_is_initial=True,
     )
 
     assert diagnosis == Diagnosis(
@@ -225,6 +262,7 @@ def test_process_name_mismatch_does_not_prevent_pid_correlation() -> None:
     diagnosis = diagnose_process(
         _sigkill_result(pid=1234),
         _available_with_victim(1234, name="different-name"),
+        pid_namespace_is_initial=True,
     )
 
     assert diagnosis == Diagnosis(

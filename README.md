@@ -133,20 +133,23 @@ classifies a run as one of:
 - **non-zero exit**: the child exited with a non-zero status
 - **signal termination**: the child was terminated by a signal other than
   `SIGKILL`
-- **OOM kill**: the child received `SIGKILL` and the kernel journal names the
-  same PID as an OOM victim
+- **OOM kill**: the child received `SIGKILL`, the kernel journal names the same
+  PID as an OOM victim, and whydied verified that it is running in the initial
+  PID namespace
 - **unknown**: the child received `SIGKILL`, but the evidence needed to identify
   its cause is missing or unavailable
 
 A `SIGKILL` alone does **not** prove an OOM kill. It may come from a user, a
 service manager, a resource controller, or another source. `whydied` confirms
-OOM only when both the observed `SIGKILL` and an explicit matching kernel OOM
-victim PID agree.
+OOM only when the observed `SIGKILL` and an explicit matching kernel OOM victim
+PID agree and the PIDs are known to come from the initial PID namespace.
 
-Before starting the child, `whydied` captures a kernel journal cursor. It then
-examines kernel events after that cursor, limiting OOM correlation to evidence
-produced during the inspected execution. If journal evidence cannot be read or
-contains no matching victim, the report says so instead of claiming OOM.
+Before starting the child, `whydied` captures a kernel journal cursor and later
+examines events after it. The cursor excludes earlier evidence, but post-exit
+collection and retries can extend the evidence window briefly beyond child
+termination. If journal evidence cannot be read, no matching victim exists, or
+PID comparability cannot be established, the diagnosis remains unknown instead
+of claiming OOM.
 
 ## Memory fields
 
@@ -181,6 +184,9 @@ and its child.
   journal, and retention of the relevant event.
 - Memory is sampled, so very short-lived processes may have no memory data and
   transient values can be missed.
+- OOM confirmation is disabled outside the initial PID namespace, or when the
+  PID namespace cannot be verified. v0.1.0 does not translate container-local
+  PIDs to host PIDs.
 - OOM confirmation matches the direct child's PID; it does not diagnose an OOM
   kill of an unrelated process or descendant as the child's OOM kill.
 - A cause can remain unknown when the available evidence is insufficient.

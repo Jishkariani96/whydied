@@ -16,8 +16,14 @@ from whydied.models import (
 def diagnose_process(
     process_result: ProcessResult,
     kernel_log: KernelLog,
+    *,
+    pid_namespace_is_initial: bool | None = None,
 ) -> Diagnosis:
-    kernel_evidence = _classify_kernel_evidence(process_result, kernel_log)
+    kernel_evidence = _classify_kernel_evidence(
+        process_result,
+        kernel_log,
+        pid_namespace_is_initial=pid_namespace_is_initial,
+    )
     return Diagnosis(
         cause=_classify_cause(process_result, kernel_evidence),
         kernel_evidence=kernel_evidence,
@@ -27,11 +33,15 @@ def diagnose_process(
 def _classify_kernel_evidence(
     process_result: ProcessResult,
     kernel_log: KernelLog,
+    *,
+    pid_namespace_is_initial: bool | None,
 ) -> KernelEvidenceStatus:
     if isinstance(kernel_log, KernelLogUnavailable):
         return KernelEvidenceStatus.UNAVAILABLE
     if _has_matching_oom_victim(process_result, kernel_log):
-        return KernelEvidenceStatus.OOM_VICTIM_MATCH
+        if pid_namespace_is_initial is True:
+            return KernelEvidenceStatus.OOM_VICTIM_MATCH
+        return KernelEvidenceStatus.UNAVAILABLE
     return KernelEvidenceStatus.NO_OOM_VICTIM_MATCH
 
 

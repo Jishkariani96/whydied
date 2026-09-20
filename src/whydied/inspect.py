@@ -13,6 +13,7 @@ from whydied.models import (
     ProcessResult,
     SignalTermination,
 )
+from whydied.procfs import read_pid_namespace_is_initial
 from whydied.runner import run_process
 
 _KERNEL_LOG_RETRY_INTERVAL_SECONDS = 0.1
@@ -22,13 +23,18 @@ _KERNEL_LOG_RETRY_ATTEMPTS = 5
 def inspect_process(command: list[str]) -> InspectionResult:
     cursor_result = read_kernel_cursor()
     process_result = run_process(command)
+    pid_namespace_is_initial = read_pid_namespace_is_initial()
 
     if isinstance(cursor_result, KernelCursorAvailable):
         kernel_log = read_kernel_log_after(cursor_result.cursor)
     else:
         kernel_log = KernelLogUnavailable(reason=cursor_result.reason)
 
-    diagnosis = diagnose_process(process_result, kernel_log)
+    diagnosis = diagnose_process(
+        process_result,
+        kernel_log,
+        pid_namespace_is_initial=pid_namespace_is_initial,
+    )
 
     if isinstance(cursor_result, KernelCursorAvailable):
         for _ in range(_KERNEL_LOG_RETRY_ATTEMPTS):
@@ -36,7 +42,11 @@ def inspect_process(command: list[str]) -> InspectionResult:
                 break
             _sleep(_KERNEL_LOG_RETRY_INTERVAL_SECONDS)
             kernel_log = read_kernel_log_after(cursor_result.cursor)
-            diagnosis = diagnose_process(process_result, kernel_log)
+            diagnosis = diagnose_process(
+                process_result,
+                kernel_log,
+                pid_namespace_is_initial=pid_namespace_is_initial,
+            )
 
     return InspectionResult(
         process=process_result,

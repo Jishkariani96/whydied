@@ -1,10 +1,15 @@
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from whydied.models import ProcStatus
-from whydied.procfs import _parse_proc_status, read_proc_status
+from whydied.procfs import (
+    _parse_proc_status,
+    read_pid_namespace_is_initial,
+    read_proc_status,
+)
 
 
 def test_parse_state_preserves_full_value() -> None:
@@ -60,6 +65,34 @@ def test_parse_proc_status_combines_supported_fields() -> None:
         peak_rss_bytes=20 * 1024,
         peak_swap_bytes=30 * 1024,
     )
+
+
+@pytest.mark.parametrize(
+    ("inode", "expected"),
+    [(0xEFFFFFFC, True), (0xF0000001, False)],
+)
+def test_read_pid_namespace_identifies_initial_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+    inode: int,
+    expected: bool,
+) -> None:
+    monkeypatch.setattr(
+        "whydied.procfs.os.stat",
+        lambda _path: SimpleNamespace(st_ino=inode),
+    )
+
+    assert read_pid_namespace_is_initial() is expected
+
+
+def test_read_pid_namespace_unavailable_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unavailable(_path: str) -> None:
+        raise PermissionError("namespace link unavailable")
+
+    monkeypatch.setattr("whydied.procfs.os.stat", unavailable)
+
+    assert read_pid_namespace_is_initial() is None
 
 
 def test_nonexistent_pid_returns_none() -> None:

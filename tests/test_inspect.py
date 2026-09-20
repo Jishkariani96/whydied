@@ -18,6 +18,21 @@ from whydied.models import (
 )
 
 
+@pytest.fixture
+def initial_pid_namespace(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    reads: list[bool] = []
+
+    def read_pid_namespace_is_initial() -> bool:
+        reads.append(True)
+        return True
+
+    monkeypatch.setattr(
+        "whydied.inspect.read_pid_namespace_is_initial",
+        read_pid_namespace_is_initial,
+    )
+    return reads
+
+
 def _process_result(
     termination: ExitTermination | SignalTermination,
     *,
@@ -38,6 +53,7 @@ def _process_result(
 
 def test_inspect_process_coordinates_cursor_process_log_and_diagnosis(
     monkeypatch: pytest.MonkeyPatch,
+    initial_pid_namespace: list[bool],
 ) -> None:
     command = ["python", "child.py"]
     cursor_result = KernelCursorAvailable(cursor="cursor-value")
@@ -69,6 +85,8 @@ def test_inspect_process_coordinates_cursor_process_log_and_diagnosis(
     def diagnose_process(
         process_arg: ProcessResult,
         kernel_log_arg: KernelLogAvailable,
+        *,
+        pid_namespace_is_initial: bool | None,
     ) -> Diagnosis:
         assert events == [
             "read_kernel_cursor",
@@ -77,6 +95,7 @@ def test_inspect_process_coordinates_cursor_process_log_and_diagnosis(
         ]
         assert process_arg is process_result
         assert kernel_log_arg is kernel_log
+        assert pid_namespace_is_initial is True
         events.append("diagnose_process")
         return diagnosis
 
@@ -98,10 +117,12 @@ def test_inspect_process_coordinates_cursor_process_log_and_diagnosis(
         "read_kernel_log_after",
         "diagnose_process",
     ]
+    assert initial_pid_namespace == [True]
 
 
 def test_inspect_process_cursor_unavailable_does_not_query_unbounded_log(
     monkeypatch: pytest.MonkeyPatch,
+    initial_pid_namespace: list[bool],
 ) -> None:
     cursor_result = KernelCursorUnavailable(reason="cursor unavailable")
     process_result = _process_result(
@@ -140,6 +161,7 @@ def test_inspect_process_cursor_unavailable_does_not_query_unbounded_log(
 
 def test_inspect_process_unavailable_post_cursor_log_does_not_retry(
     monkeypatch: pytest.MonkeyPatch,
+    initial_pid_namespace: list[bool],
 ) -> None:
     process_result = _process_result(
         SignalTermination(number=signal.SIGKILL, name="SIGKILL")
@@ -190,6 +212,7 @@ def test_inspect_process_unavailable_post_cursor_log_does_not_retry(
 )
 def test_inspect_process_non_sigkill_does_not_retry(
     monkeypatch: pytest.MonkeyPatch,
+    initial_pid_namespace: list[bool],
     termination: ExitTermination | SignalTermination,
     expected_cause: DiagnosisCause,
 ) -> None:
@@ -225,6 +248,7 @@ def test_inspect_process_non_sigkill_does_not_retry(
 
 def test_inspect_process_immediate_oom_match_does_not_retry(
     monkeypatch: pytest.MonkeyPatch,
+    initial_pid_namespace: list[bool],
 ) -> None:
     process_result = _process_result(
         SignalTermination(number=signal.SIGKILL, name="SIGKILL"),
@@ -263,6 +287,7 @@ def test_inspect_process_immediate_oom_match_does_not_retry(
 
 def test_inspect_process_sigkill_no_match_retries_and_finds_oom(
     monkeypatch: pytest.MonkeyPatch,
+    initial_pid_namespace: list[bool],
 ) -> None:
     process_result = _process_result(
         SignalTermination(number=signal.SIGKILL, name="SIGKILL"),
@@ -300,10 +325,12 @@ def test_inspect_process_sigkill_no_match_retries_and_finds_oom(
     )
     assert sleeps == [0.1]
     assert cursors == ["original-cursor", "original-cursor"]
+    assert initial_pid_namespace == [True]
 
 
 def test_inspect_process_sigkill_retries_stop_at_configured_bound(
     monkeypatch: pytest.MonkeyPatch,
+    initial_pid_namespace: list[bool],
 ) -> None:
     process_result = _process_result(
         SignalTermination(number=signal.SIGKILL, name="SIGKILL")
@@ -338,6 +365,7 @@ def test_inspect_process_sigkill_retries_stop_at_configured_bound(
 
 def test_inspect_process_run_process_error_skips_kernel_and_diagnosis(
     monkeypatch: pytest.MonkeyPatch,
+    initial_pid_namespace: list[bool],
 ) -> None:
     events: list[str] = []
 
@@ -372,3 +400,4 @@ def test_inspect_process_run_process_error_skips_kernel_and_diagnosis(
         inspect_process(["python"])
 
     assert events == ["read_kernel_cursor", "run_process"]
+    assert initial_pid_namespace == []

@@ -1,5 +1,9 @@
+import os
+
 from whydied.models import ProcStatus
 
+# PID_NS_INIT_INO from Linux's <linux/nsfs.h> UAPI.
+_INITIAL_PID_NAMESPACE_INODE = 0xEFFFFFFC
 _KB_IN_BYTES = 1024
 
 
@@ -34,6 +38,13 @@ def _parse_proc_status(text: str) -> ProcStatus:
         peak_rss_bytes=peak_rss_bytes,
         peak_swap_bytes=peak_swap_bytes,
     )
+
+
+def read_pid_namespace_is_initial() -> bool | None:
+    try:
+        return os.stat("/proc/self/ns/pid").st_ino == _INITIAL_PID_NAMESPACE_INODE
+    except OSError:
+        return None
 
 
 def read_proc_status(pid: int) -> ProcStatus | None:
