@@ -1,4 +1,5 @@
 import argparse
+import signal
 
 from whydied import __version__
 from whydied.inspect import inspect_process
@@ -38,6 +39,8 @@ def main(argv: list[str] | None = None) -> None:
         inspection = inspect_process(command)
     except OSError as exc:
         parser.error(f"failed to start child process {command[0]!r}: {exc}")
+    except KeyboardInterrupt:
+        raise SystemExit(128 + signal.SIGINT) from None
 
     print(format_report(inspection))
 

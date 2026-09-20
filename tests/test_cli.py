@@ -156,6 +156,36 @@ def test_child_launch_failure_fails_cleanly_without_formatting(
     assert "Traceback" not in captured.err
 
 
+def test_keyboard_interrupt_exits_cleanly_with_shell_sigint_status(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    inspected_commands: list[list[str]] = []
+    format_called = False
+
+    def inspect_process(command: list[str]) -> InspectionResult:
+        inspected_commands.append(command)
+        raise KeyboardInterrupt
+
+    def format_report(_inspection: InspectionResult) -> str:
+        nonlocal format_called
+        format_called = True
+        return "unexpected report"
+
+    monkeypatch.setattr("whydied.cli.inspect_process", inspect_process)
+    monkeypatch.setattr("whydied.cli.format_report", format_report)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--", "child-command"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 130
+    assert inspected_commands == [["child-command"]]
+    assert format_called is False
+    assert captured.out == ""
+    assert captured.err == ""
+
+
 @pytest.mark.parametrize("child_exit_code", [0, 7])
 def test_child_exit_code_is_propagated_after_printing_report(
     monkeypatch: pytest.MonkeyPatch,
